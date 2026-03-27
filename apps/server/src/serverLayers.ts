@@ -35,6 +35,7 @@ import { GitHubCliLive } from "./git/Layers/GitHubCli";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { PtyAdapter } from "./terminal/Services/PTY";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
+import { ChildProcessSpawner } from "effect/unstable/process";
 
 type RuntimePtyAdapterLoader = {
   layer: Layer.Layer<PtyAdapter, never, FileSystem.FileSystem | Path.Path>;
@@ -61,6 +62,7 @@ export function makeServerProviderLayer(): Layer.Layer<
   | ServerSettingsService
   | FileSystem.FileSystem
   | AnalyticsService
+  | ChildProcessSpawner.ChildProcessSpawner
 > {
   return Effect.gen(function* () {
     const { providerEventLogPath } = yield* ServerConfig;
@@ -81,7 +83,7 @@ export function makeServerProviderLayer(): Layer.Layer<
     );
     const cursorAdapterLayer = makeCursorAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
-    ).pipe(Layer.provideMerge(NodeServices.layer));
+    );
     const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
       Layer.provide(codexAdapterLayer),
       Layer.provide(claudeAdapterLayer),
