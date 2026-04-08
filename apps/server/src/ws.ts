@@ -11,6 +11,7 @@ import {
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
+  PREVIEW_WS_METHODS,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   OrchestrationReplayEventsError,
@@ -46,6 +47,7 @@ import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem";
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths";
 import { ProjectSetupScriptRunner } from "./project/Services/ProjectSetupScriptRunner";
+import { PreviewHub } from "./preview/Services/PreviewHub";
 
 const WsRpcLayer = WsRpcGroup.toLayer(
   Effect.gen(function* () {
@@ -65,6 +67,7 @@ const WsRpcLayer = WsRpcGroup.toLayer(
     const workspaceEntries = yield* WorkspaceEntries;
     const workspaceFileSystem = yield* WorkspaceFileSystem;
     const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
+    const previewHub = yield* PreviewHub;
 
     const serverCommandId = (tag: string) =>
       CommandId.makeUnsafe(`server:${tag}:${crypto.randomUUID()}`);
@@ -707,6 +710,42 @@ const WsRpcLayer = WsRpcGroup.toLayer(
             return Stream.concat(Stream.fromIterable(snapshotEvents), liveEvents);
           }),
           { "rpc.aggregate": "server" },
+        ),
+      [PREVIEW_WS_METHODS.registerPreviewUrl]: (input) =>
+        observeRpcEffect(PREVIEW_WS_METHODS.registerPreviewUrl, previewHub.register(input), {
+          "rpc.aggregate": "preview",
+        }),
+      [PREVIEW_WS_METHODS.listPreviewUrlsByThread]: (input) =>
+        observeRpcEffect(
+          PREVIEW_WS_METHODS.listPreviewUrlsByThread,
+          previewHub.listByThread(input),
+          { "rpc.aggregate": "preview" },
+        ),
+      [PREVIEW_WS_METHODS.listPreviewUrlsByProject]: (input) =>
+        observeRpcEffect(
+          PREVIEW_WS_METHODS.listPreviewUrlsByProject,
+          previewHub.listByProject(input),
+          { "rpc.aggregate": "preview" },
+        ),
+      [PREVIEW_WS_METHODS.listPreviewUrlsByTurn]: (input) =>
+        observeRpcEffect(PREVIEW_WS_METHODS.listPreviewUrlsByTurn, previewHub.listByTurn(input), {
+          "rpc.aggregate": "preview",
+        }),
+      [PREVIEW_WS_METHODS.updatePreviewUrlStatus]: (input) =>
+        observeRpcEffect(
+          PREVIEW_WS_METHODS.updatePreviewUrlStatus,
+          previewHub.updateStatus(input),
+          { "rpc.aggregate": "preview" },
+        ),
+      [PREVIEW_WS_METHODS.deletePreviewUrl]: (input) =>
+        observeRpcEffect(PREVIEW_WS_METHODS.deletePreviewUrl, previewHub.delete(input), {
+          "rpc.aggregate": "preview",
+        }),
+      [PREVIEW_WS_METHODS.subscribePreviewEvents]: (input) =>
+        observeRpcStream(
+          PREVIEW_WS_METHODS.subscribePreviewEvents,
+          previewHub.subscribe(input.projectId).pipe(Stream.orDie),
+          { "rpc.aggregate": "preview" },
         ),
     });
   }),

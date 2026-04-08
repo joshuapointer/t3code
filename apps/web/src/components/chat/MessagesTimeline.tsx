@@ -1,4 +1,4 @@
-import { type MessageId, type TurnId } from "@t3tools/contracts";
+import { type MessageId, type PreviewUrl, type TurnId } from "@t3tools/contracts";
 import {
   memo,
   useCallback,
@@ -85,6 +85,7 @@ interface MessagesTimelineProps {
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
   workspaceRoot: string | undefined;
+  previewsByMessageId: Map<MessageId, PreviewUrl[]>;
   onVirtualizerSnapshot?: (snapshot: {
     totalSize: number;
     measurements: ReadonlyArray<{
@@ -120,6 +121,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   resolvedTheme,
   timestampFormat,
   workspaceRoot,
+  previewsByMessageId,
   onVirtualizerSnapshot,
 }: MessagesTimelineProps) {
   const timelineRootRef = useRef<HTMLDivElement | null>(null);
@@ -509,6 +511,34 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                         resolvedTheme={resolvedTheme}
                         onOpenTurnDiff={onOpenTurnDiff}
                       />
+                    </div>
+                  );
+                })()}
+                {(() => {
+                  const msgPreviews = previewsByMessageId.get(row.message.id);
+                  if (!msgPreviews || msgPreviews.length === 0) return null;
+                  return (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {msgPreviews.map((preview) => (
+                        <a
+                          key={preview.id}
+                          href={preview.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={preview.url}
+                          className="flex items-center gap-1 rounded border border-border/60 bg-background px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:border-ring/50 hover:text-foreground"
+                        >
+                          <GlobeIcon className="size-2.5 shrink-0 text-primary/70" />
+                          <span className="max-w-[200px] truncate">
+                            {preview.label ?? preview.url.replace(/^https?:\/\//, "")}
+                          </span>
+                          {preview.status !== "active" && (
+                            <span className="ml-0.5 rounded-sm bg-muted px-1 py-px text-[9px] uppercase tracking-wide text-muted-foreground/60">
+                              {preview.status}
+                            </span>
+                          )}
+                        </a>
+                      ))}
                     </div>
                   );
                 })()}

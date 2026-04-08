@@ -89,6 +89,7 @@ describe("MessagesTimeline", () => {
         resolvedTheme="light"
         timestampFormat="locale"
         workspaceRoot={undefined}
+        previewsByMessageId={new Map()}
       />,
     );
 
@@ -134,6 +135,7 @@ describe("MessagesTimeline", () => {
         resolvedTheme="light"
         timestampFormat="locale"
         workspaceRoot={undefined}
+        previewsByMessageId={new Map()}
       />,
     );
 

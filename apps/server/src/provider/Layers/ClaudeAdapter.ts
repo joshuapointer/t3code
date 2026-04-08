@@ -75,6 +75,8 @@ import {
 } from "../Errors.ts";
 import { ClaudeAdapter, type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
+import { PreviewMcpServer } from "../../preview/Layers/PreviewMcpServer.ts";
+import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 
 const PROVIDER = "claudeAgent" as const;
 type ClaudeTextStreamKind = Extract<RuntimeContentStreamKind, "assistant_text" | "reasoning_text">;
@@ -932,6 +934,8 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const sessions = new Map<ThreadId, ClaudeSessionContext>();
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
   const serverSettingsService = yield* ServerSettingsService;
+  const previewMcpServer = yield* PreviewMcpServer;
+  const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const nextEventId = Effect.map(Random.nextUUIDv4, (id) => EventId.makeUnsafe(id));
@@ -2716,6 +2720,25 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         canUseTool,
         env: process.env,
         ...(input.cwd ? { additionalDirectories: [input.cwd] } : {}),
+        mcpServers: {
+          "t3-preview-hub": previewMcpServer.buildMcpServerConfig({
+            threadId: input.threadId,
+            getProjectId: () =>
+              Effect.runPromise(
+                projectionSnapshotQuery.getSnapshot().pipe(
+                  Effect.map((snapshot) => {
+                    const thread = snapshot.threads.find((t) => t.id === input.threadId);
+                    return thread?.projectId ?? input.threadId;
+                  }),
+                  Effect.orElseSucceed(() => input.threadId),
+                ),
+              ),
+            getTurnId: () => {
+              const ctx = Effect.runSync(Ref.get(contextRef));
+              return ctx?.turnState?.turnId ?? null;
+            },
+          }),
+        },
       };
 
       const queryRuntime = yield* Effect.try({

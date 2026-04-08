@@ -17,7 +17,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Fiber, Layer, Random, Stream } from "effect";
+import { Effect, Fiber, Layer, Option, Random, Stream } from "effect";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
@@ -25,6 +25,8 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import { ClaudeAdapter } from "../Services/ClaudeAdapter.ts";
 import { makeClaudeAdapterLive, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import { PreviewMcpServer } from "../../preview/Layers/PreviewMcpServer.ts";
+import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 
 class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   private readonly queue: Array<SDKMessage> = [];
@@ -171,6 +173,36 @@ function makeHarness(config?: {
       ),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(
+        Layer.succeed(PreviewMcpServer, {
+          buildMcpServerConfig: (_opts) => ({
+            type: "sdk",
+            name: "t3-preview-hub",
+            instance: {} as any,
+          }),
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ProjectionSnapshotQuery, {
+          getSnapshot: () =>
+            Effect.succeed({
+              threads: [],
+              projects: [],
+              sessions: [],
+              turns: [],
+              messages: [],
+              activities: [],
+              checkpoints: [],
+              proposedPlans: [],
+              snapshotSequence: 0,
+              pendingApprovals: [],
+            } as any),
+          getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
+          getActiveProjectByWorkspaceRoot: (_root) => Effect.succeed(Option.none()),
+          getFirstActiveThreadIdByProjectId: (_id) => Effect.succeed(Option.none()),
+          getThreadCheckpointContext: (_id) => Effect.succeed(Option.none()),
+        }),
+      ),
     ),
     query,
     getLastCreateQueryInput: () => createInput,
@@ -1200,6 +1232,24 @@ describe("ClaudeAdapterLive", () => {
       Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provideMerge(
+        Layer.succeed(PreviewMcpServer, {
+          buildMcpServerConfig: (_opts) => ({
+            type: "sdk",
+            name: "t3-preview-hub",
+            instance: {} as any,
+          }),
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ProjectionSnapshotQuery, {
+          getSnapshot: () => Effect.succeed({} as any),
+          getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
+          getActiveProjectByWorkspaceRoot: (_root) => Effect.succeed(Option.none()),
+          getFirstActiveThreadIdByProjectId: (_id) => Effect.succeed(Option.none()),
+          getThreadCheckpointContext: (_id) => Effect.succeed(Option.none()),
+        }),
+      ),
     );
 
     return Effect.gen(function* () {

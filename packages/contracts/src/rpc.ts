@@ -69,6 +69,16 @@ import {
   ServerUpsertKeybindingResult,
 } from "./server";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings";
+import {
+  DeletePreviewUrlRpc,
+  ListPreviewUrlsByProjectRpc,
+  ListPreviewUrlsByThreadRpc,
+  ListPreviewUrlsByTurnRpc,
+  PREVIEW_WS_METHODS,
+  RegisterPreviewUrlRpc,
+  SubscribePreviewEventsRpc,
+  UpdatePreviewUrlStatusRpc,
+} from "./preview";
 
 export const WS_METHODS = {
   // Project registry methods
@@ -114,6 +124,9 @@ export const WS_METHODS = {
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
+
+  // Preview hub methods
+  ...PREVIEW_WS_METHODS,
 } as const;
 
 export const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -356,4 +369,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationReplayEventsRpc,
+  RegisterPreviewUrlRpc,
+  ListPreviewUrlsByThreadRpc,
+  ListPreviewUrlsByProjectRpc,
+  ListPreviewUrlsByTurnRpc,
+  UpdatePreviewUrlStatusRpc,
+  DeletePreviewUrlRpc,
+  SubscribePreviewEventsRpc,
 );

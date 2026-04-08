@@ -4,6 +4,10 @@ import {
   type GitRunStackedActionResult,
   type NativeApi,
   ORCHESTRATION_WS_METHODS,
+  PREVIEW_WS_METHODS,
+  type PreviewEvent,
+  type PreviewUrl,
+  ProjectId,
   type ServerSettingsPatch,
   WS_METHODS,
 } from "@t3tools/contracts";
@@ -98,6 +102,14 @@ export interface WsRpcClient {
     readonly getFullThreadDiff: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.getFullThreadDiff>;
     readonly replayEvents: RpcUnaryMethod<typeof ORCHESTRATION_WS_METHODS.replayEvents>;
     readonly onDomainEvent: RpcStreamMethod<typeof WS_METHODS.subscribeOrchestrationDomainEvents>;
+  };
+  readonly previews: {
+    readonly listByProject: (input: { projectId: ProjectId }) => Promise<readonly PreviewUrl[]>;
+    readonly listByTurn: (input: { turnId: string }) => Promise<readonly PreviewUrl[]>;
+    readonly subscribeEvents: (
+      input: { projectId?: ProjectId | null },
+      listener: (event: PreviewEvent) => void,
+    ) => () => void;
   };
 }
 
@@ -224,6 +236,24 @@ export function createWsRpcClient(transport = new WsTransport()): WsRpcClient {
           (client) => client[WS_METHODS.subscribeOrchestrationDomainEvents]({}),
           listener,
           options,
+        ),
+    },
+    previews: {
+      listByProject: (input) =>
+        transport
+          .request((client) => client[PREVIEW_WS_METHODS.listPreviewUrlsByProject](input))
+          .then((items) => [...items]),
+      listByTurn: (input) =>
+        transport
+          .request((client) =>
+            client[PREVIEW_WS_METHODS.listPreviewUrlsByTurn]({ turnId: input.turnId as any }),
+          )
+          .then((items) => [...items]),
+      subscribeEvents: (input, listener) =>
+        transport.subscribe(
+          (client) =>
+            client[PREVIEW_WS_METHODS.subscribePreviewEvents]({ projectId: input.projectId }),
+          listener,
         ),
     },
   };

@@ -76,6 +76,7 @@ import {
 import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries.ts";
 import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem.ts";
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
+import { PreviewHub } from "./preview/Services/PreviewHub.ts";
 
 const defaultProjectId = ProjectId.makeUnsafe("project-default");
 const defaultThreadId = ThreadId.makeUnsafe("thread-default");
@@ -403,6 +404,17 @@ const buildAppUnderTest = (options?: {
           markHttpListening: Effect.void,
           enqueueCommand: (effect) => effect,
           ...options?.layers?.serverRuntimeStartup,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(PreviewHub)({
+          register: () => Effect.die("not implemented in tests"),
+          listByThread: () => Effect.succeed([]),
+          listByProject: () => Effect.succeed([]),
+          listByTurn: () => Effect.succeed([]),
+          updateStatus: () => Effect.void,
+          delete: () => Effect.void,
+          subscribe: () => Stream.empty,
         }),
       ),
       Layer.provide(workspaceAndProjectServicesLayer),

@@ -48,6 +48,7 @@ import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem"
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths";
 import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScriptRunner";
 import { ObservabilityLive } from "./observability/Layers/Observability";
+import { PreviewHubLive, PreviewMcpServerLiveComposed } from "./preview/Layers/PreviewHub";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -148,9 +149,17 @@ const ProviderLayerLive = Layer.unwrap(
     const claudeAdapterLayer = makeClaudeAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
+    const claudeAdapterLayerWithDeps = claudeAdapterLayer.pipe(
+      Layer.provide(
+        OrchestrationProjectionSnapshotQueryLive.pipe(
+          Layer.provide(OrchestrationEventInfrastructureLayerLive),
+        ),
+      ),
+      Layer.provide(PreviewMcpServerLiveComposed),
+    );
     const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
       Layer.provide(codexAdapterLayer),
-      Layer.provide(claudeAdapterLayer),
+      Layer.provide(claudeAdapterLayerWithDeps),
       Layer.provideMerge(providerSessionDirectoryLayer),
     );
     return makeProviderServiceLive(
@@ -191,6 +200,8 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(OrchestrationLayerLive),
   Layer.provideMerge(ProviderLayerLive),
   Layer.provideMerge(TerminalLayerLive),
+  Layer.provideMerge(PreviewHubLive),
+  Layer.provideMerge(PreviewMcpServerLiveComposed),
   Layer.provideMerge(PersistenceLayerLive),
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(ProviderRegistryLive),

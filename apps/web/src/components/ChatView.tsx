@@ -65,6 +65,7 @@ import {
 } from "../pendingUserInput";
 import { useStore } from "../store";
 import { useProjectById, useThreadById } from "../storeSelectors";
+import { usePreviewStore } from "../previewStore";
 import { useUiStateStore } from "../uiStateStore";
 import {
   buildPlanImplementationThreadTitle,
@@ -1324,6 +1325,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   );
   const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
     useTurnDiffSummaries(activeThread);
+  const allPreviews = usePreviewStore((s) => s.previews);
   const turnDiffSummaryByAssistantMessageId = useMemo(() => {
     const byMessageId = new Map<MessageId, TurnDiffSummary>();
     for (const summary of turnDiffSummaries) {
@@ -1332,6 +1334,26 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
     return byMessageId;
   }, [turnDiffSummaries]);
+  const previewsByMessageId = useMemo(() => {
+    // Build turnId → messageId reverse index from turn diff summaries
+    const messageIdByTurnId = new Map<string, MessageId>();
+    for (const summary of turnDiffSummaries) {
+      if (summary.assistantMessageId) {
+        messageIdByTurnId.set(summary.turnId, summary.assistantMessageId);
+      }
+    }
+    const map = new Map<MessageId, (typeof allPreviews)[number][]>();
+    for (const preview of allPreviews) {
+      const tid = preview.turnId as string | null;
+      if (!tid) continue;
+      const msgId = messageIdByTurnId.get(tid);
+      if (!msgId) continue;
+      const existing = map.get(msgId);
+      if (existing) existing.push(preview);
+      else map.set(msgId, [preview]);
+    }
+    return map;
+  }, [allPreviews, turnDiffSummaries]);
   const revertTurnCountByUserMessageId = useMemo(() => {
     const byUserMessageId = new Map<MessageId, number>();
     for (let index = 0; index < timelineEntries.length; index += 1) {
@@ -4005,6 +4027,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
                 workspaceRoot={activeProject?.cwd ?? undefined}
+                previewsByMessageId={previewsByMessageId}
               />
             </div>
 

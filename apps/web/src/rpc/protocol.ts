@@ -29,6 +29,7 @@ export function createWsRpcProtocolLayer(url?: string) {
     url,
     protocol: window.location.protocol === "https:" ? "wss" : "ws",
     pathname: "/ws",
+    searchParams: { token: "2023895a92e14eeb1a8cd6b2586aa9928ccaa091fa6efeda" },
   });
   const trackingWebSocketConstructorLayer = Layer.succeed(
     Socket.WebSocketConstructor,
