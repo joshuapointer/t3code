@@ -1,15 +1,14 @@
 import * as OS from "node:os";
 import type {
-  ModelCapabilities,
   CodexSettings,
   ServerProvider,
-  ServerProviderModel,
   ServerProviderAuth,
   ServerProviderSkill,
   ServerProviderState,
 } from "@t3tools/contracts";
 import {
   Cache,
+  Data,
   Duration,
   Effect,
   Equal,
@@ -45,143 +44,25 @@ import {
   codexAuthSubType,
   type CodexAccountSnapshot,
 } from "../codexAccount";
-import { probeCodexDiscovery } from "../codexAppServer";
+import { type CodexDiscoverySnapshot, probeCodexDiscovery } from "../codexAppServer";
+import { BUILT_IN_CODEX_MODELS, DEFAULT_CODEX_MODEL_CAPABILITIES } from "../codexModels";
 import { CodexProvider } from "../Services/CodexProvider";
 import { ServerSettingsService } from "../../serverSettings";
 import { ServerSettingsError } from "@t3tools/contracts";
 
-const DEFAULT_CODEX_MODEL_CAPABILITIES: ModelCapabilities = {
-  reasoningEffortLevels: [
-    { value: "xhigh", label: "Extra High" },
-    { value: "high", label: "High", isDefault: true },
-    { value: "medium", label: "Medium" },
-    { value: "low", label: "Low" },
-  ],
-  supportsFastMode: true,
-  supportsThinkingToggle: false,
-  contextWindowOptions: [],
-  promptInjectedEffortLevels: [],
-};
-
 const PROVIDER = "codex" as const;
 const OPENAI_AUTH_PROVIDERS = new Set(["openai"]);
-const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
-  {
-    slug: "gpt-5.4",
-    name: "GPT-5.4",
-    isCustom: false,
-    capabilities: {
-      reasoningEffortLevels: [
-        { value: "xhigh", label: "Extra High" },
-        { value: "high", label: "High", isDefault: true },
-        { value: "medium", label: "Medium" },
-        { value: "low", label: "Low" },
-      ],
-      supportsFastMode: true,
-      supportsThinkingToggle: false,
-      contextWindowOptions: [],
-      promptInjectedEffortLevels: [],
-    },
-  },
-  {
-    slug: "gpt-5.4-mini",
-    name: "GPT-5.4 Mini",
-    isCustom: false,
-    capabilities: {
-      reasoningEffortLevels: [
-        { value: "xhigh", label: "Extra High" },
-        { value: "high", label: "High", isDefault: true },
-        { value: "medium", label: "Medium" },
-        { value: "low", label: "Low" },
-      ],
-      supportsFastMode: true,
-      supportsThinkingToggle: false,
-      contextWindowOptions: [],
-      promptInjectedEffortLevels: [],
-    },
-  },
-  {
-    slug: "gpt-5.3-codex",
-    name: "GPT-5.3 Codex",
-    isCustom: false,
-    capabilities: {
-      reasoningEffortLevels: [
-        { value: "xhigh", label: "Extra High" },
-        { value: "high", label: "High", isDefault: true },
-        { value: "medium", label: "Medium" },
-        { value: "low", label: "Low" },
-      ],
-      supportsFastMode: true,
-      supportsThinkingToggle: false,
-      contextWindowOptions: [],
-      promptInjectedEffortLevels: [],
-    },
-  },
-  {
-    slug: "gpt-5.3-codex-spark",
-    name: "GPT-5.3 Codex Spark",
-    isCustom: false,
-    capabilities: {
-      reasoningEffortLevels: [
-        { value: "xhigh", label: "Extra High" },
-        { value: "high", label: "High", isDefault: true },
-        { value: "medium", label: "Medium" },
-        { value: "low", label: "Low" },
-      ],
-      supportsFastMode: true,
-      supportsThinkingToggle: false,
-      contextWindowOptions: [],
-      promptInjectedEffortLevels: [],
-    },
-  },
-  {
-    slug: "gpt-5.2-codex",
-    name: "GPT-5.2 Codex",
-    isCustom: false,
-    capabilities: {
-      reasoningEffortLevels: [
-        { value: "xhigh", label: "Extra High" },
-        { value: "high", label: "High", isDefault: true },
-        { value: "medium", label: "Medium" },
-        { value: "low", label: "Low" },
-      ],
-      supportsFastMode: true,
-      supportsThinkingToggle: false,
-      contextWindowOptions: [],
-      promptInjectedEffortLevels: [],
-    },
-  },
-  {
-    slug: "gpt-5.2",
-    name: "GPT-5.2",
-    isCustom: false,
-    capabilities: {
-      reasoningEffortLevels: [
-        { value: "xhigh", label: "Extra High" },
-        { value: "high", label: "High", isDefault: true },
-        { value: "medium", label: "Medium" },
-        { value: "low", label: "Low" },
-      ],
-      supportsFastMode: true,
-      supportsThinkingToggle: false,
-      contextWindowOptions: [],
-      promptInjectedEffortLevels: [],
-    },
-  },
-];
 
-export function getCodexModelCapabilities(model: string | null | undefined): ModelCapabilities {
-  const slug = model?.trim();
-  return (
-    BUILT_IN_MODELS.find((candidate) => candidate.slug === slug)?.capabilities ??
-    DEFAULT_CODEX_MODEL_CAPABILITIES
-  );
-}
+class CodexDiscoveryCacheKey extends Data.Class<{
+  readonly binaryPath: string;
+  readonly homePath?: string;
+  readonly cwd: string;
+}> {}
 
 function buildInitialCodexProviderSnapshot(codexSettings: CodexSettings): ServerProvider {
   const checkedAt = new Date().toISOString();
   const models = providerModelsFromSettings(
-    BUILT_IN_MODELS,
+    BUILT_IN_CODEX_MODELS,
     PROVIDER,
     codexSettings.customModels,
     DEFAULT_CODEX_MODEL_CAPABILITIES,
@@ -397,7 +278,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   );
   const checkedAt = new Date().toISOString();
   const models = providerModelsFromSettings(
-    BUILT_IN_MODELS,
+    BUILT_IN_CODEX_MODELS,
     PROVIDER,
     codexSettings.customModels,
     DEFAULT_CODEX_MODEL_CAPABILITIES,
@@ -594,6 +475,52 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   });
 });
 
+const applyCodexDiscoverySnapshot = (
+  snapshot: ServerProvider,
+  discovery: CodexDiscoverySnapshot,
+): ServerProvider => {
+  const authType = codexAuthSubType(discovery.account);
+  const authLabel = codexAuthSubLabel(discovery.account);
+
+  return {
+    ...snapshot,
+    auth: {
+      ...snapshot.auth,
+      ...(authType ? { type: authType } : {}),
+      ...(authLabel ? { label: authLabel } : {}),
+    },
+    models: adjustCodexModelsForAccount(snapshot.models, discovery.account),
+    skills: discovery.skills,
+  };
+};
+
+const enrichCodexSnapshotViaDiscovery = (input: {
+  readonly settings: CodexSettings;
+  readonly snapshot: ServerProvider;
+  readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
+  readonly getDiscovery: (input: {
+    readonly binaryPath: string;
+    readonly homePath?: string;
+    readonly cwd: string;
+  }) => Effect.Effect<CodexDiscoverySnapshot | undefined>;
+}) =>
+  (input.settings.enabled && input.snapshot.installed
+    ? input
+        .getDiscovery({
+          binaryPath: input.settings.binaryPath,
+          homePath: input.settings.homePath,
+          cwd: process.cwd(),
+        })
+        .pipe(
+          Effect.flatMap((discovery) =>
+            discovery
+              ? input.publishSnapshot(applyCodexDiscoverySnapshot(input.snapshot, discovery))
+              : Effect.void,
+          ),
+        )
+    : Effect.void
+  ).pipe(Effect.catchCause((cause) => Effect.logError(cause)));
+
 export const CodexProviderLive = Layer.effect(
   CodexProvider,
   Effect.gen(function* () {
@@ -604,8 +531,8 @@ export const CodexProviderLive = Layer.effect(
     const accountProbeCache = yield* Cache.make({
       capacity: 4,
       timeToLive: Duration.minutes(5),
-      lookup: (key: string) => {
-        const [binaryPath, homePath, cwd] = JSON.parse(key) as [string, string | undefined, string];
+      lookup: (key: CodexDiscoveryCacheKey) => {
+        const { binaryPath, homePath, cwd } = key;
         return probeCodexCapabilities({
           binaryPath,
           cwd,
@@ -618,17 +545,9 @@ export const CodexProviderLive = Layer.effect(
       readonly binaryPath: string;
       readonly homePath?: string;
       readonly cwd: string;
-    }) =>
-      Cache.get(accountProbeCache, JSON.stringify([input.binaryPath, input.homePath, input.cwd]));
+    }) => Cache.get(accountProbeCache, new CodexDiscoveryCacheKey(input));
 
-    const checkProvider = checkCodexProviderStatus(
-      (input) =>
-        getDiscovery({
-          ...input,
-          cwd: process.cwd(),
-        }).pipe(Effect.map((discovery) => discovery?.account)),
-      (input) => getDiscovery(input).pipe(Effect.map((discovery) => discovery?.skills)),
-    ).pipe(
+    const checkProvider = checkCodexProviderStatus().pipe(
       Effect.provideService(ServerSettingsService, serverSettings),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
@@ -646,6 +565,13 @@ export const CodexProviderLive = Layer.effect(
       haveSettingsChanged: (previous, next) => !Equal.equals(previous, next),
       buildInitialSnapshot: buildInitialCodexProviderSnapshot,
       checkProvider,
+      enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
+        enrichCodexSnapshotViaDiscovery({
+          settings,
+          snapshot,
+          publishSnapshot,
+          getDiscovery,
+        }),
     });
   }),
 );
