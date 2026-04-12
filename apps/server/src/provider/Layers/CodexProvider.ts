@@ -349,7 +349,7 @@ const probeCodexCapabilities = (input: {
   readonly homePath?: string;
   readonly cwd: string;
 }) =>
-  Effect.tryPromise((signal) => probeCodexDiscovery({ ...input, signal })).pipe(
+  probeCodexDiscovery(input).pipe(
     Effect.timeoutOption(CAPABILITIES_PROBE_TIMEOUT_MS),
     Effect.result,
     Effect.map((result) => {

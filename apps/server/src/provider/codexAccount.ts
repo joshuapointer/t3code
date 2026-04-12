@@ -1,3 +1,4 @@
+import type * as EffectCodexSchema from "effect-codex-app-server/schema";
 import type { ServerProviderModel } from "@t3tools/contracts";
 
 export type CodexPlanType =
@@ -58,6 +59,33 @@ export function readCodexAccountSnapshot(response: unknown): CodexAccountSnapsho
     type: "unknown",
     planType: null,
     sparkEnabled: false,
+  };
+}
+
+export function readCodexAccountSnapshotResponse(
+  response: EffectCodexSchema.V2GetAccountResponse,
+): CodexAccountSnapshot {
+  const account = response.account;
+  if (!account) {
+    return {
+      type: "unknown",
+      planType: null,
+      sparkEnabled: false,
+    };
+  }
+
+  if (account.type === "apiKey") {
+    return {
+      type: "apiKey",
+      planType: null,
+      sparkEnabled: false,
+    };
+  }
+
+  return {
+    type: "chatgpt",
+    planType: account.planType as CodexPlanType,
+    sparkEnabled: CODEX_SPARK_ENABLED_PLAN_TYPES.has(account.planType as CodexPlanType),
   };
 }
 
