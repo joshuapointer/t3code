@@ -5,6 +5,11 @@ import * as Semaphore from "effect/Semaphore";
 import type { ServerProviderShape } from "./Services/ServerProvider";
 import { ServerSettingsError } from "@t3tools/contracts";
 
+interface ProviderSnapshotState {
+  readonly snapshot: ServerProvider;
+  readonly enrichmentGeneration: number;
+}
+
 export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(function* <
   Settings,
 >(input: {
@@ -28,33 +33,40 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   );
   const initialSettings = yield* input.getSettings;
   const initialSnapshot = input.initialSnapshot(initialSettings);
-  const snapshotRef = yield* Ref.make(initialSnapshot);
+  const snapshotStateRef = yield* Ref.make<ProviderSnapshotState>({
+    snapshot: initialSnapshot,
+    enrichmentGeneration: 0,
+  });
   const settingsRef = yield* Ref.make(initialSettings);
   const enrichmentFiberRef = yield* Ref.make<Fiber.Fiber<void, unknown> | null>(null);
-  const enrichmentGenerationRef = yield* Ref.make(0);
   const scope = yield* Effect.scope;
 
   const publishEnrichedSnapshot = Effect.fn("publishEnrichedSnapshot")(function* (
     generation: number,
     nextSnapshot: ServerProvider,
   ) {
-    const currentGeneration = yield* Ref.get(enrichmentGenerationRef);
-    if (currentGeneration !== generation) {
+    const snapshotToPublish = yield* Ref.modify(snapshotStateRef, (state) => {
+      if (state.enrichmentGeneration !== generation || Equal.equals(state.snapshot, nextSnapshot)) {
+        return [null, state] as const;
+      }
+      return [
+        nextSnapshot,
+        {
+          ...state,
+          snapshot: nextSnapshot,
+        },
+      ] as const;
+    });
+    if (snapshotToPublish === null) {
       return;
     }
-
-    const previousSnapshot = yield* Ref.get(snapshotRef);
-    if (Equal.equals(previousSnapshot, nextSnapshot)) {
-      return;
-    }
-
-    yield* Ref.set(snapshotRef, nextSnapshot);
-    yield* PubSub.publish(changesPubSub, nextSnapshot);
+    yield* PubSub.publish(changesPubSub, snapshotToPublish);
   });
 
   const restartSnapshotEnrichment = Effect.fn("restartSnapshotEnrichment")(function* (
     settings: Settings,
     snapshot: ServerProvider,
+    generation: number,
   ) {
     const previousFiber = yield* Ref.getAndSet(enrichmentFiberRef, null);
     if (previousFiber) {
@@ -65,12 +77,11 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       return;
     }
 
-    const generation = yield* Ref.updateAndGet(enrichmentGenerationRef, (value) => value + 1);
     const fiber = yield* input
       .enrichSnapshot({
         settings,
         snapshot,
-        getSnapshot: Ref.get(snapshotRef),
+        getSnapshot: Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot)),
         publishSnapshot: (nextSnapshot) => publishEnrichedSnapshot(generation, nextSnapshot),
       })
       .pipe(Effect.ignoreCause({ log: true }), Effect.forkIn(scope));
@@ -86,14 +97,25 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     const previousSettings = yield* Ref.get(settingsRef);
     if (!forceRefresh && !input.haveSettingsChanged(previousSettings, nextSettings)) {
       yield* Ref.set(settingsRef, nextSettings);
-      return yield* Ref.get(snapshotRef);
+      return yield* Ref.get(snapshotStateRef).pipe(Effect.map((state) => state.snapshot));
     }
 
     const nextSnapshot = yield* input.checkProvider;
+    const nextGeneration = yield* Ref.modify(snapshotStateRef, (state) => {
+      const generation = input.enrichSnapshot
+        ? state.enrichmentGeneration + 1
+        : state.enrichmentGeneration;
+      return [
+        generation,
+        {
+          snapshot: nextSnapshot,
+          enrichmentGeneration: generation,
+        },
+      ] as const;
+    });
     yield* Ref.set(settingsRef, nextSettings);
-    yield* Ref.set(snapshotRef, nextSnapshot);
     yield* PubSub.publish(changesPubSub, nextSnapshot);
-    yield* restartSnapshotEnrichment(nextSettings, nextSnapshot);
+    yield* restartSnapshotEnrichment(nextSettings, nextSnapshot, nextGeneration);
     return nextSnapshot;
   });
   const applySnapshot = (nextSettings: Settings, options?: { readonly forceRefresh?: boolean }) =>

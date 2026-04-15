@@ -1,9 +1,17 @@
+import * as path from "node:path";
+import * as os from "node:os";
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
 import {
   buildCursorCapabilitiesFromConfigOptions,
   buildCursorDiscoveredModelsFromConfigOptions,
+  discoverCursorModelsViaAcp,
   getCursorFallbackModels,
   getCursorParameterizedModelPickerUnsupportedMessage,
   parseCursorAboutOutput,
@@ -12,6 +20,24 @@ import {
   resolveCursorAcpBaseModelId,
   resolveCursorAcpConfigUpdates,
 } from "./CursorProvider.ts";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const mockAgentPath = path.join(__dirname, "../../../scripts/acp-mock-agent.ts");
+
+async function makeMockAgentWrapper(extraEnv?: Record<string, string>) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "cursor-provider-mock-"));
+  const wrapperPath = path.join(dir, "fake-agent.sh");
+  const envExports = Object.entries(extraEnv ?? {})
+    .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
+    .join("\n");
+  const script = `#!/bin/sh
+${envExports}
+exec ${JSON.stringify("bun")} ${JSON.stringify(mockAgentPath)} "$@"
+`;
+  await writeFile(wrapperPath, script, "utf8");
+  await chmod(wrapperPath, 0o755);
+  return wrapperPath;
+}
 
 const parameterizedGpt54ConfigOptions = [
   {
@@ -326,6 +352,28 @@ describe("buildCursorDiscoveredModelsFromConfigOptions", () => {
           promptInjectedEffortLevels: [],
         },
       },
+    ]);
+  });
+});
+
+describe("discoverCursorModelsViaAcp", () => {
+  it("keeps the ACP probe runtime alive long enough to discover models", async () => {
+    const wrapperPath = await makeMockAgentWrapper();
+
+    const models = await Effect.runPromise(
+      discoverCursorModelsViaAcp({
+        enabled: true,
+        binaryPath: wrapperPath,
+        apiEndpoint: "",
+        customModels: [],
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    );
+
+    expect(models.map((model) => model.slug)).toEqual([
+      "default",
+      "composer-2",
+      "gpt-5.4",
+      "claude-opus-4-6",
     ]);
   });
 });

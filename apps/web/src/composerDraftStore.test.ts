@@ -1185,6 +1185,24 @@ describe("composerDraftStore sticky composer settings", () => {
     expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("codex");
   });
 
+  it("drops empty cursor model options when normalizing sticky state", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setStickyModelSelection(
+      modelSelection("cursor", "gpt-5.4", {
+        reasoning: undefined,
+        fastMode: undefined,
+        thinking: undefined,
+        contextWindow: undefined,
+      }),
+    );
+
+    expect(useComposerDraftStore.getState().stickyModelSelectionByProvider.cursor).toEqual(
+      modelSelection("cursor", "gpt-5.4"),
+    );
+    expect(useComposerDraftStore.getState().stickyActiveProvider).toBe("cursor");
+  });
+
   it("applies sticky activeProvider to new drafts", () => {
     const store = useComposerDraftStore.getState();
     const threadId = ThreadId.make("thread-sticky-active-provider");

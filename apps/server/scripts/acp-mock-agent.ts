@@ -287,7 +287,7 @@ const program = Effect.gen(function* () {
 
   yield* agent.handleCancel(({ sessionId }) =>
     Effect.sync(() => {
-      cancelledSessions.add(String(sessionId));
+      cancelledSessions.add(String(sessionId ?? "mock-session-1"));
     }),
   );
 

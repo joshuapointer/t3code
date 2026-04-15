@@ -54,6 +54,31 @@ const enrichedSnapshot: ServerProvider = {
   ],
 };
 
+const refreshedSnapshotSecond: ServerProvider = {
+  ...refreshedSnapshot,
+  checkedAt: "2026-04-10T00:00:03.000Z",
+  message: "Refreshed provider availability again.",
+};
+
+const enrichedSnapshotSecond: ServerProvider = {
+  ...refreshedSnapshotSecond,
+  checkedAt: "2026-04-10T00:00:04.000Z",
+  models: [
+    {
+      slug: "gpt-5.4",
+      name: "GPT-5.4",
+      isCustom: false,
+      capabilities: {
+        reasoningEffortLevels: [],
+        supportsFastMode: false,
+        supportsThinkingToggle: false,
+        contextWindowOptions: [],
+        promptInjectedEffortLevels: [],
+      },
+    },
+  ],
+};
+
 describe("makeManagedServerProvider", () => {
   it.effect("keeps the initial snapshot until an explicit refresh runs", () =>
     Effect.scoped(
@@ -163,6 +188,61 @@ describe("makeManagedServerProvider", () => {
 
         assert.deepStrictEqual(updates, [refreshedSnapshot, enrichedSnapshot]);
         assert.deepStrictEqual(latest, enrichedSnapshot);
+      }),
+    ),
+  );
+
+  it.effect("ignores stale enrichment callbacks after a newer refresh advances generation", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const publishCallbacks: Array<(snapshot: ServerProvider) => Effect.Effect<void>> = [];
+        const refreshCount = yield* Ref.make(0);
+        const firstCallbackReady = yield* Deferred.make<void>();
+        const secondCallbackReady = yield* Deferred.make<void>();
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          initialSnapshot: () => initialSnapshot,
+          checkProvider: Ref.updateAndGet(refreshCount, (count) => count + 1).pipe(
+            Effect.map((count) => (count === 1 ? refreshedSnapshot : refreshedSnapshotSecond)),
+          ),
+          enrichSnapshot: ({ publishSnapshot }) =>
+            Effect.gen(function* () {
+              publishCallbacks.push(publishSnapshot);
+              if (publishCallbacks.length === 1) {
+                yield* Deferred.succeed(firstCallbackReady, undefined).pipe(Effect.ignore);
+              } else if (publishCallbacks.length === 2) {
+                yield* Deferred.succeed(secondCallbackReady, undefined).pipe(Effect.ignore);
+              }
+            }),
+          refreshInterval: "1 hour",
+        });
+
+        const updatesFiber = yield* Stream.take(provider.streamChanges, 3).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+
+        yield* provider.refresh;
+        yield* Deferred.await(firstCallbackReady);
+
+        yield* provider.refresh;
+        yield* Deferred.await(secondCallbackReady);
+
+        yield* publishCallbacks[0]!(enrichedSnapshot);
+        yield* publishCallbacks[1]!(enrichedSnapshotSecond);
+
+        const updates = Array.from(yield* Fiber.join(updatesFiber));
+        const latest = yield* provider.getSnapshot;
+
+        assert.deepStrictEqual(updates, [
+          refreshedSnapshot,
+          refreshedSnapshotSecond,
+          enrichedSnapshotSecond,
+        ]);
+        assert.deepStrictEqual(latest, enrichedSnapshotSecond);
       }),
     ),
   );

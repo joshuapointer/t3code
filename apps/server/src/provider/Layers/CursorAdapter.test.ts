@@ -797,6 +797,92 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
+  it.effect("interrupting a session settles pending user-input waits", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const serverSettings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-interrupt-pending-user-input");
+      const userInputRequested = yield* Deferred.make<void>();
+
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({ T3_ACP_EMIT_ASK_QUESTION: "1" }),
+      );
+      yield* serverSettings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      yield* Stream.runForEach(adapter.streamEvents, (event) => {
+        if (String(event.threadId) !== String(threadId) || event.type !== "user-input.requested") {
+          return Effect.void;
+        }
+        return Deferred.succeed(userInputRequested, undefined).pipe(Effect.ignore);
+      }).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "cursor",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { provider: "cursor", model: "default" },
+      });
+
+      const sendTurnFiber = yield* adapter
+        .sendTurn({
+          threadId,
+          input: "ask me a question and then interrupt",
+          attachments: [],
+        })
+        .pipe(Effect.forkChild);
+
+      yield* Deferred.await(userInputRequested);
+      yield* adapter.interruptTurn(threadId);
+      yield* Fiber.await(sendTurnFiber);
+
+      assert.equal(yield* adapter.hasSession(threadId), true);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("broadcasts runtime events to multiple stream consumers", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-runtime-event-broadcast");
+
+      const wrapperPath = yield* Effect.promise(() => makeMockAgentWrapper());
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const firstConsumer = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const secondConsumer = yield* Stream.take(adapter.streamEvents, 3).pipe(
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.startSession({
+        threadId,
+        provider: "cursor",
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+        modelSelection: { provider: "cursor", model: "default" },
+      });
+
+      const firstEvents = Array.from(yield* Fiber.join(firstConsumer));
+      const secondEvents = Array.from(yield* Fiber.join(secondConsumer));
+
+      assert.deepStrictEqual(
+        firstEvents.map((event) => event.type),
+        ["session.started", "session.state.changed", "thread.started"],
+      );
+      assert.deepStrictEqual(
+        secondEvents.map((event) => event.type),
+        ["session.started", "session.state.changed", "thread.started"],
+      );
+
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
   it.effect("switches model in-session via session/set_config_option", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;

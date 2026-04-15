@@ -25,7 +25,7 @@ import {
   Fiber,
   FileSystem,
   Layer,
-  Queue,
+  PubSub,
   Random,
   Stream,
 } from "effect";
@@ -237,16 +237,18 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
             stream: "native",
           })
         : undefined);
+    const managedNativeEventLogger =
+      options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
 
     const sessions = new Map<ThreadId, CursorSessionContext>();
-    const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
+    const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const nextEventId = Effect.map(Random.nextUUIDv4, (id) => EventId.make(id));
     const makeEventStamp = () => Effect.all({ eventId: nextEventId, createdAt: nowIso });
 
     const offerRuntimeEvent = (event: ProviderRuntimeEvent) =>
-      Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
+      PubSub.publish(runtimeEventPubSub, event).pipe(Effect.asVoid);
 
     const logNative = (
       threadId: ThreadId,
@@ -496,7 +498,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
           yield* acp.handleRequestPermission((params) =>
             Effect.gen(function* () {
               yield* logNative(input.threadId, "session/request_permission", params, "acp.jsonrpc");
-              if (ctx?.session.runtimeMode === "full-access") {
+              if (input.runtimeMode === "full-access") {
                 const autoApprovedOptionId = selectAutoApprovedPermissionOption(params);
                 if (autoApprovedOptionId !== undefined) {
                   return {
@@ -824,6 +826,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         yield* settlePendingApprovalsAsCancelled(ctx.pendingApprovals);
+        yield* settlePendingUserInputsAsEmptyAnswers(ctx.pendingUserInputs);
         yield* Effect.ignore(
           ctx.acp.cancel.pipe(
             Effect.mapError((error) =>
@@ -910,9 +913,12 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach(sessions.values(), stopSessionInternal, { discard: true }).pipe(
-        Effect.tap(() => Queue.shutdown(runtimeEventQueue)),
+        Effect.tap(() => PubSub.shutdown(runtimeEventPubSub)),
+        Effect.tap(() => managedNativeEventLogger?.close() ?? Effect.void),
       ),
     );
+
+    const streamEvents = Stream.fromPubSub(runtimeEventPubSub);
 
     return {
       provider: PROVIDER,
@@ -928,9 +934,7 @@ function makeCursorAdapter(options?: CursorAdapterLiveOptions) {
       listSessions,
       hasSession,
       stopAll,
-      get streamEvents() {
-        return Stream.fromQueue(runtimeEventQueue);
-      },
+      streamEvents,
     } satisfies CursorAdapterShape;
   });
 }

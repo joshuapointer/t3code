@@ -340,7 +340,7 @@ const makeCursorAcpProbeRuntime = (cursorSettings: CursorSettings) =>
       }).pipe(Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner))),
     );
     return yield* Effect.service(AcpSessionRuntime).pipe(Effect.provide(acpContext));
-  }).pipe(Effect.scoped);
+  });
 
 function normalizeCursorConfigOptionToken(value: string | null | undefined): string {
   return (
@@ -443,7 +443,7 @@ export function resolveCursorAcpConfigUpdates(
   return updates;
 }
 
-const discoverCursorModelsViaAcp = (cursorSettings: CursorSettings) =>
+export const discoverCursorModelsViaAcp = (cursorSettings: CursorSettings) =>
   Effect.gen(function* () {
     const acp = yield* makeCursorAcpProbeRuntime(cursorSettings);
     const started = yield* acp.start();
@@ -452,7 +452,7 @@ const discoverCursorModelsViaAcp = (cursorSettings: CursorSettings) =>
     );
   }).pipe(Effect.scoped);
 
-const discoverCursorModelCapabilitiesViaAcp = (
+export const discoverCursorModelCapabilitiesViaAcp = (
   cursorSettings: CursorSettings,
   existingModels: ReadonlyArray<ServerProviderModel>,
 ) =>

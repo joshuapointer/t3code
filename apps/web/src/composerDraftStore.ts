@@ -646,12 +646,15 @@ function normalizeProviderModelOptions(
 
   const cursor: CursorModelOptions | undefined =
     cursorCandidate !== null
-      ? {
-          ...(cursorReasoning ? { reasoning: cursorReasoning } : {}),
-          ...(cursorFastMode !== undefined ? { fastMode: cursorFastMode } : {}),
-          ...(cursorThinking !== undefined ? { thinking: cursorThinking } : {}),
-          ...(cursorContextWindow !== undefined ? { contextWindow: cursorContextWindow } : {}),
-        }
+      ? (() => {
+          const nextCursor = {
+            ...(cursorReasoning ? { reasoning: cursorReasoning } : {}),
+            ...(cursorFastMode !== undefined ? { fastMode: cursorFastMode } : {}),
+            ...(cursorThinking !== undefined ? { thinking: cursorThinking } : {}),
+            ...(cursorContextWindow !== undefined ? { contextWindow: cursorContextWindow } : {}),
+          } satisfies CursorModelOptions;
+          return Object.keys(nextCursor).length > 0 ? nextCursor : undefined;
+        })()
       : undefined;
 
   if (!codex && !claude && cursor === undefined) {

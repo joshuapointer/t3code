@@ -31,7 +31,7 @@ export const runHandler = Effect.fnUntraced(function* <A, B>(
   method: string,
 ) {
   if (!handler) {
-    return yield* AcpError.AcpRequestError.methodNotFound(method);
+    return yield* Effect.fail(AcpError.AcpRequestError.methodNotFound(method).toProtocolError());
   }
   return yield* handler(payload).pipe(
     Effect.mapError((error) =>

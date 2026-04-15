@@ -159,13 +159,12 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     resolveExtPending(requestId, (deferred) => Deferred.succeed(deferred, value));
 
   const failAllExtPending = (error: AcpError.AcpError) =>
-    Ref.get(extPending).pipe(
+    Ref.getAndSet(extPending, new Map()).pipe(
       Effect.flatMap((pending) =>
         Effect.forEach([...pending.values()], (deferred) => Deferred.fail(deferred, error), {
           discard: true,
         }),
       ),
-      Effect.andThen(Ref.set(extPending, new Map())),
     );
 
   const dispatchNotification = (notification: AcpIncomingNotification) =>
